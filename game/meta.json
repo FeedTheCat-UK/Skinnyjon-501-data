@@ -1,0 +1,16 @@
+{
+ "version": 1,
+ "built": "2026-10-18",
+ "seasons": "2012/13–2025/26",
+ "leagues": [
+  "Premier League",
+  "LaLiga",
+  "Serie A",
+  "Bundesliga",
+  "Ligue 1"
+ ],
+ "coverage": "League stats: Premier League, LaLiga, Serie A, Bundesliga, Ligue 1, 2012/13–2025/26 seasons (league matches only).",
+ "players": 10596,
+ "categories": 598,
+ "source": "transfermarkt-datasets by David Cariboo (CC0)"
+}
