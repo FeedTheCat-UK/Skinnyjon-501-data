@@ -89,22 +89,26 @@ def add(cid,kind,label,sub,stat,series,weight,note=''):
     if not st: return
     cats.append({'id':cid,'kind':kind,'stat':stat,'label':label,'sub':sub,'note':note,'start':st,'w':round(weight,2),'p':sorted([[k,v] for k,v in vals.items()],key=lambda x:-x[1])})
 span=f"{seasons[0]}/{str(seasons[0]+1)[-2:]}–{seasons[1]}/{str(seasons[1]+1)[-2:]}"
-# clubs
-for (club,comp),grp in pc.groupby(['player_club_id','competition_id']):
-    nm=club_name(cl.name.get(club,str(club))); nseas=a[(a.player_club_id==club)].season.nunique()
-    for stat in ['apps','goals','cards']:
-        add(f'c{club}{stat[0]}','club',nm,f'{LEAGUES[comp]} {SW[stat]}',stat,grp.groupby('player_id')[stat].sum(),nseas/14*(1.6 if stat=='apps' else 1),'')
-# leagues
+# Categories are kept generic: whole leagues, all five leagues together, and only the best-known clubs.
+BIG_CLUBS={985:'Manchester United',281:'Manchester City',31:'Liverpool',11:'Arsenal',631:'Chelsea',148:'Tottenham Hotspur',
+ 762:'Newcastle United',29:'Everton',405:'Aston Villa',379:'West Ham United',
+ 418:'Real Madrid',131:'Barcelona',13:'Atlético Madrid',
+ 506:'Juventus',5:'AC Milan',46:'Inter Milan',12:'Roma',6195:'Napoli',398:'Lazio',
+ 27:'Bayern Munich',16:'Borussia Dortmund',15:'Bayer Leverkusen',
+ 583:'Paris Saint-Germain',244:'Marseille',1041:'Lyon',162:'Monaco'}
+WORD={'apps':'appearances','goals':'goals','cards':'cards (yellow + red)'}
+CAP={'apps':'Most appearances','goals':'Most goals','cards':'Most cards (yellow + red)'}
+# whole leagues: "Most Premier League appearances" etc.
 for comp,grp in pc.groupby('competition_id'):
     for stat in ['apps','goals','cards']:
-        add(f'l{comp}{stat[0]}','league',LEAGUES[comp],f'total {SW[stat]}',stat,grp.groupby('player_id')[stat].sum(),1.2)
-# nationality x league
-pc2=pc.merge(pl[['player_id','country_of_citizenship']],on='player_id')
-for (comp,cn),grp in pc2.groupby(['competition_id','country_of_citizenship']):
-    adj=NATION_ADJ.get(cn)
-    if not adj or grp.player_id.nunique()<40: continue
+        add(f'l{comp}{stat[0]}','league',LEAGUES[comp],CAP[stat],stat,grp.groupby('player_id')[stat].sum(),2.0 if stat!='cards' else 1.0)
+# all five leagues together
+for stat in ['apps','goals','cards']:
+    add(f'all{stat[0]}','all','All five leagues',CAP[stat],stat,pc.groupby('player_id')[stat].sum(),1.5 if stat!='cards' else 0.8)
+# the big clubs (league games for that club)
+for (club,comp),grp in pc[pc.player_club_id.isin(list(BIG_CLUBS))].groupby(['player_club_id','competition_id']):
     for stat in ['apps','goals']:
-        add(f'n{comp}{cn[:3]}{stat[0]}','natleague',f'{adj} players',f'{LEAGUES[comp]} {SW[stat]}',stat,grp.groupby('player_id')[stat].sum(),0.8)
+        add(f'c{club}{stat[0]}','club',BIG_CLUBS[club],f'{LEAGUES[comp]} {WORD[stat]}',stat,grp.groupby('player_id')[stat].sum(),1.0)
 # (country caps are left out: the dataset mixes youth and senior caps, so they can't be trusted)
 meta={'version':1,'built':datetime.date.today().isoformat(),'seasons':span,'leagues':list(LEAGUES.values()),
       'coverage':f'League stats: {", ".join(LEAGUES.values())}, {span} seasons (league matches only).',
