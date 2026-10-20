@@ -65,7 +65,8 @@ def club_key(c):
 players = [json.loads(l) for l in gzip.open(SRC, 'rt', encoding='utf-8')]
 print('pages', len(players))
 
-# 1) resolve each season row's league; learn which league each club was in each season
+# 1) resolve each season row's league from linked division names (a link carries forward to later
+#    unlinked rows with the same text on that page); learn which league each club was in each season
 club_season = collections.defaultdict(collections.Counter)
 for p in players:
     seen = {}
@@ -74,12 +75,14 @@ for p in players:
         if tgt:
             seen[txt] = tgt
         t = tgt or seen.get(txt)
-        lg = LEAGUE_TARGETS.get(t) if t else LEAGUE_TEXT.get(txt)
+        if t:  # "2004–05 La Liga" -> "La Liga"
+            t = re.sub(r'^\d{4}(?:[–\-]\d{2,4})?\s+', '', t)
+        lg = LEAGUE_TARGETS.get(t) if t else None
         if lg and season < FIRST[lg]:
             lg = None
-        row.append(lg)
-        if t or txt:
-            club_season[(club_key(club), season)][lg or ('other:' + (t or txt))] += 1
+        row.append(lg if t else '?')
+        if t:
+            club_season[(club_key(club), season)][lg or 'other'] += 1
 
 
 def league_of(club, season):
@@ -87,7 +90,17 @@ def league_of(club, season):
     if not c:
         return '?'
     lg, n = c.most_common(1)[0]
-    return lg if n >= 2 or len(c) == 1 else '?'
+    tot = sum(c.values())
+    return lg if n >= 3 and n >= 0.85 * tot else '?'
+
+
+# rows whose division was never linked on the page: trust them only if other players' tables
+# put that club in that league that season
+for p in players:
+    for row in p['seasons']:
+        if row[6] == '?':
+            lg = league_of(club_key(row[0]), row[1]) if LEAGUE_TEXT.get(row[3]) else None
+            row[6] = lg if lg in FIRST and lg == LEAGUE_TEXT.get(row[3]) else None
 
 
 # 2) per-player totals
@@ -101,7 +114,7 @@ for p in players:
     if p['seasons']:
         for club, season, tgt, txt, a, g, lg in p['seasons']:
             first_season = min(first_season, season); last_season = max(last_season, season)
-            if lg:
+            if lg and g <= 2 * a + 1:
                 lt[lg][0] += a; lt[lg][1] += g
     else:
         for c in p['clubs']:
@@ -113,7 +126,7 @@ for p in players:
             lgs = {league_of(club_key(c['club']), s) for s in seasons}
             if len(lgs) == 1:
                 lg = lgs.pop()
-                if lg in FIRST:
+                if lg in FIRST and (c['goals'] or 0) <= 2 * c['apps'] + 1:
                     lt[lg][0] += c['apps']; lt[lg][1] += c['goals'] or 0
                     fallback_used += 1
     intl = {}
@@ -176,11 +189,13 @@ for si, stat, cap in [(0, 'apps', 'Most appearances'), (1, 'goals', 'Most goals'
     add(f'wall{stat[0]}', 'all', 'All five leagues', cap, stat,
         [(i, sum(v[si] for v in r['leagues'].values())) for i, r in enumerate(out_players)], 1.5,
         'Premier League, LaLiga, Serie A, Bundesliga and Ligue 1 together')
+HOME = {'England', 'Scotland', 'Wales', 'Northern Ireland', 'Republic of Ireland'}
 for n, w in NATIONS.items():
+    w = w if n in HOME else w * 0.5
     for si, stat, cap in [(0, 'apps', 'Most caps'), (1, 'goals', 'Most international goals')]:
         add(f'wn{re.sub("[^A-Za-z]", "", n)[:6]}{stat[0]}', 'nation', n, cap, stat,
             [(i, r['intl'][n][si]) for i, r in enumerate(out_players) if n in r['intl']], w,
-            'senior internationals, not league matches')
+            'senior international caps and goals')
 
 meta = {'version': 2, 'built': datetime.date.today().isoformat(), 'seasons': 'All',
         'leagues': LEAGUES,

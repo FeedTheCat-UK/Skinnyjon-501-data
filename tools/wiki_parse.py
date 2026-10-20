@@ -61,7 +61,8 @@ def split_params(body):
 def num(s):
     if s is None:
         return None
-    s = strip_refs(s)
+    s = unwrap(strip_refs(s))
+    s = LINK.sub(lambda m: m.group(2) or m.group(1), s)
     s = re.sub(r'\{\{[^{}]*\}\}', '', s)
     s = s.replace("'''", '').replace("''", '').replace(',', '')
     m = re.search(r'\(?\s*(\d{1,4})\s*\)?', s)
@@ -72,12 +73,21 @@ def link_target(s):
     m = LINK.search(s or '')
     if m:
         return m.group(1).strip(), (m.group(2) or m.group(1)).strip()
-    t = re.sub(r"'''?|\{\{[^{}]*\}\}", '', s or '').strip()
+    t = re.sub(r"'''?|\{\{[^{}]*\}\}", '', unwrap(s or '')).strip()
     return None, t
 
 
+UNWRAP = re.compile(r'\{\{\s*(?:nowrap|nobr|small|big|center|centre|hs)\s*\|([^{}]*)\}\}', re.I)
+
+
+def unwrap(s):
+    for _ in range(3):
+        s = UNWRAP.sub(lambda m: m.group(1), s)
+    return s
+
+
 def plain(s):
-    s = strip_refs(s or '')
+    s = unwrap(strip_refs(s or ''))
     s = LINK.sub(lambda m: m.group(2) or m.group(1), s)
     s = re.sub(r'\{\{[^{}]*\}\}', '', s)
     return re.sub(r"'''?|<[^>]+>", '', s).strip()
@@ -150,7 +160,7 @@ def club_table(x):
         if en < 0:
             return None
         t = x[st:en]
-        head = t[:1500].lower()
+        head = strip_refs(t[:20000])[:2500].lower()
         if 'apps' in head and ('league' in head or 'division' in head):
             return t
         if m.start() > 60000:
@@ -194,6 +204,9 @@ def cells_of(row):
     return out
 
 
+FILL = '\x00—'
+
+
 def season_rows(t):
     """Yield (club, season_start, division_target, division_text, apps, goals) for each season row."""
     rows = re.split(r'\n\|-[^\n]*', t)
@@ -212,7 +225,7 @@ def season_rows(t):
                 c = cmap[col]; full.append(c[1]); c[2] -= 1; col += 1; continue
             c = cells[ci]; ci += 1
             for k in range(c['cs']):
-                full.append(c['v'] if k == 0 else '—')
+                full.append(c['v'] if k == 0 else FILL)
                 if c['rs'] > 1:
                     carry.append([col, c['v'], c['rs'] - 1])
                 col += 1
@@ -222,22 +235,26 @@ def season_rows(t):
         # find a season cell then a division cell followed by two numbers
         si = None
         for i, v in enumerate(full[:4]):
-            pv = plain(v)
+            if v is FILL:
+                continue
+            pv = plain(re.sub(r'^!\s*(?:colspan|rowspan)\s*=\s*"?\d+"?\s*\|', '', v.lstrip('!')))
             if SEASON.fullmatch(pv.strip()) or re.fullmatch(r'\s*(1[89]\d\d|20[0-2]\d)\s*[–\-/]\s*\d{2,4}\s*', pv) or re.fullmatch(r'\s*(1[89]\d\d|20[0-2]\d)\s*', pv):
                 si = i; break
         if si is None:
             continue
         sm = SEASON.search(plain(full[si]))
         season = int(sm.group(1))
-        if si + 3 >= len(full):
+        rest = [v for v in full[si + 1:si + 7] if v is not FILL]
+        if len(rest) < 3:
             continue
-        div = full[si + 1]
-        a, g = num(full[si + 2]), num(full[si + 3])
+        div = rest[0]
+        a, g = num(rest[1]), num(rest[2])
         if a is None:
             continue
         tgt, disp = link_target(div)
-        club = plain(full[si - 1]) if si >= 1 else ''
-        ctgt, _ = link_target(full[si - 1]) if si >= 1 else (None, '')
+        prev = [v for v in full[:si] if v is not FILL]
+        club = plain(prev[-1]) if prev else ''
+        ctgt, _ = link_target(prev[-1]) if prev else (None, '')
         out.append([ctgt or club, season, tgt, plain(div), a, g or 0])
     return out
 

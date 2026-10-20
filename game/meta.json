@@ -1,7 +1,7 @@
 {
- "version": 1,
+ "version": 2,
  "built": "2026-10-20",
- "seasons": "2012/13–2025/26",
+ "seasons": "All",
  "leagues": [
   "Premier League",
   "LaLiga",
@@ -9,8 +9,8 @@
   "Bundesliga",
   "Ligue 1"
  ],
- "coverage": "League stats: Premier League, LaLiga, Serie A, Bundesliga, Ligue 1, 2012/13–2025/26 seasons (league matches only).",
- "players": 10596,
- "categories": 34,
- "source": "transfermarkt-datasets by David Cariboo (CC0)"
+ "coverage": "Career league stats from Wikipedia: Premier League (since 1992/93), LaLiga, Serie A, Bundesliga and Ligue 1 (league matches only), plus senior international caps and goals.",
+ "players": 39870,
+ "categories": 90,
+ "source": "English Wikipedia (CC BY-SA 4.0)"
 }
