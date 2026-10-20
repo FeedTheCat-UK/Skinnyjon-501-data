@@ -197,7 +197,7 @@ for n, w in NATIONS.items():
             [(i, r['intl'][n][si]) for i, r in enumerate(out_players) if n in r['intl']], w,
             'senior international caps and goals')
 
-meta = {'version': 2, 'built': datetime.date.today().isoformat(), 'seasons': 'All',
+meta = {'version': 2, 'built': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%MZ'), 'seasons': 'All',
         'leagues': LEAGUES,
         'coverage': 'Career league stats from Wikipedia: Premier League (since 1992/93), LaLiga, Serie A, Bundesliga and Ligue 1 (league matches only), plus senior international caps and goals.',
         'players': len(names), 'categories': len(cats), 'source': 'English Wikipedia (CC BY-SA 4.0)'}
