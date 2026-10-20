@@ -75,7 +75,7 @@ json.dump({'note':'Players no longer in the dataset\'s leagues (retired or moved
 names=[[r.name, nat(r), ival(r.yob) or 0] for r in pl.itertuples()]
 json.dump(names,open(OUT/'game/names.json','w'),ensure_ascii=False,separators=(',',':'))
 # ---- game: categories ----
-TIERS=[(501,180),(301,120),(201,80),(101,40),(51,20)]
+TIERS=[(501,180),(301,180),(201,180),(101,180),(51,180)]  # always darts rules: max 180 a turn
 def tier(vals):
     for start,mx in TIERS:
         e=sorted(v for v in vals if 1<=v<=mx)
