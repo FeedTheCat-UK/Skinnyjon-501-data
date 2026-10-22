@@ -15,11 +15,15 @@ monthly Wikimedia data dump (no scraping of the live site).
 Wikipedia is edited by volunteers: big names are reliable, current players' numbers can lag a few weeks.
 
 ## Files
-- `players/players.json.gz` — every player: name, Wikipedia page, birth year, main nation, league apps/goals, caps/goals.
+- `players/players.json.gz` — every player: name, Wikipedia page, birth year, main nation, position, league apps/goals, caps/goals,
+  and club by club: `[club, league, apps, goals, first season, last season]` (big-five league spells only).
 - `game/names.json` — every player name for the phone autocomplete (most-played first).
 - `game/cats.json` — the categories the game draws from (whole leagues, all five leagues, national teams × apps/goals),
   each with its start score and every eligible player's value.
 - `game/meta.json` — build date and the coverage line shown in the game.
+- `game/pointless.json` — the **Pointless Footballers** questions (clubs, scorers, goalkeepers, national teams, pairs), each with
+  every right answer and its 0–95 "how many people would say him" score from the stats. The game blends in what players
+  actually answer over time (stored online, not here).
 
 ## Rebuild (monthly)
 ```

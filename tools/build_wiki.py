@@ -103,6 +103,67 @@ for p in players:
             row[6] = lg if lg in FIRST and lg == LEAGUE_TEXT.get(row[3]) else None
 
 
+# club names: one key per club whether the page linked it ("Newcastle United F.C.") or not ("Newcastle United")
+SEASON_ART = re.compile(r'^\d{4}[–\-]\d{2,4}\s+(.*?)\s+season$')
+# club key: drop dots, then strip "FC", "A.C.", "1909" style bits from either end ("S.S.C. Napoli" = "Napoli")
+CLUB_TOK = {'fc', 'cf', 'cfc', 'afc', 'ac', 'acf', 'as', 'ss', 'ssc', 'us', 'uc', 'ogc', 'rc', 'rcd', 'sc', 'sv', 'vfl', 'vfb', 'tsg', 'cd', 'ud', 'ca', 'sd',
+            'aj', 'bc', 'hsc', 'sco', 'calcio', 'fsv', '1', '04', '05', '29', '96', '1899', '1907', '1909', '1913', '1919'}
+NAME_FIX = {'milan': 'AC Milan', 'internazionale': 'Inter Milan', 'internazionale milano': 'Inter Milan', 'inter': 'Inter Milan',
+            'olympique de marseille': 'Marseille', 'olympique lyonnais': 'Lyon', 'schalke': 'Schalke 04', 'mainz': 'Mainz 05',
+            'köln': '1. FC Köln', 'nürnberg': '1. FC Nürnberg', 'kaiserslautern': '1. FC Kaiserslautern', 'hamburger': 'Hamburg',
+            'bayer 04 leverkusen': 'Bayer Leverkusen', 'hannover': 'Hannover 96', 'celta de vigo': 'Celta Vigo', 'città di palermo': 'Palermo',
+            'chievoverona': 'Chievo', 'chievo verona': 'Chievo', 'strasbourg alsace': 'Strasbourg', 'stade malherbe caen': 'Caen', 'losc lille': 'Lille',
+            'lille osc': 'Lille', 'stade rennais': 'Rennes', 'girondins de bordeaux': 'Bordeaux', 'athletic': 'Athletic Bilbao', 'athletic club': 'Athletic Bilbao',
+            'deportivo alavés': 'Alavés', 'deportivo de la coruña': 'Deportivo La Coruña', 'sporting de gijón': 'Sporting Gijón', 'stade de reims': 'Reims',
+            'stade brestois': 'Brest', 'sochaux-montbéliard': 'Sochaux', 'hellas verona': 'Hellas Verona', 'bayern munich': 'Bayern Munich',
+            'borussia mönchengladbach': 'Borussia Mönchengladbach', 'union berlin': 'Union Berlin', 'atlético madrid': 'Atlético Madrid'}
+
+
+def club_base(c):
+    c = club_key(c)
+    m = SEASON_ART.match(c)
+    if m:
+        c = m.group(1)
+    return re.sub(r'\s*\(.*?\)$', '', c).strip()
+
+
+CLUB_DISPLAY = collections.defaultdict(collections.Counter)
+
+
+def club_id(c):
+    words = club_base(c).replace('.', '').replace(',', ' ').split()
+    while len(words) > 1 and words[0].lower() in CLUB_TOK:
+        words = words[1:]
+    while len(words) > 1 and words[-1].lower() in CLUB_TOK:
+        words = words[:-1]
+    disp = ' '.join(words)
+    k = disp.lower()
+    CLUB_DISPLAY[k][disp] += 1
+    return k
+
+
+def club_name(k):
+    return NAME_FIX.get(k) or (CLUB_DISPLAY[k].most_common(1)[0][0] if CLUB_DISPLAY[k] else k)
+
+
+def pos_cat(t):
+    t = (t or '').lower()
+    for word, cat in [('goalkeeper', 'Goalkeeper'), ('striker', 'Forward'), ('forward', 'Forward'), ('winger', 'Midfielder'), ('midfield', 'Midfielder'),
+                      ('back', 'Defender'), ('defender', 'Defender'), ('sweeper', 'Defender')]:
+        if word in t:
+            return cat
+    return ''
+
+
+def add_club(cl, club, lg, a, g, y0, y1=None):
+    k = (club_id(club), lg)
+    v = cl.get(k)
+    if not v:
+        cl[k] = [a, g, y0, y1 or y0]
+    else:
+        v[0] += a; v[1] += g; v[2] = min(v[2], y0); v[3] = max(v[3], y1 or y0)
+
+
 # 2) per-player totals
 out_players, names, stats = [], [], []
 fallback_used = 0
@@ -110,12 +171,15 @@ for p in players:
     if p.get('female'):
         continue
     lt = collections.defaultdict(lambda: [0, 0])
+    cl = {}  # (club key, league) -> [apps, goals, first season, last season]
     first_season, last_season = 9999, 0
     if p['seasons']:
         for club, season, tgt, txt, a, g, lg in p['seasons']:
             first_season = min(first_season, season); last_season = max(last_season, season)
             if lg and g <= 2 * a + 1:
                 lt[lg][0] += a; lt[lg][1] += g
+                if a > 0:
+                    add_club(cl, club, lg, a, g, season)
     else:
         for c in p['clubs']:
             if c['y0'] is None or c['apps'] is None:
@@ -129,6 +193,8 @@ for p in players:
                 if lg in FIRST and (c['goals'] or 0) <= 2 * c['apps'] + 1:
                     lt[lg][0] += c['apps']; lt[lg][1] += c['goals'] or 0
                     fallback_used += 1
+                    if c['apps'] > 0:
+                        add_club(cl, c['club'], lg, c['apps'], c['goals'] or 0, seasons[0], seasons[-1])
     intl = {}
     for t in p['intl']:
         n = team_nation(t['team'])
@@ -141,8 +207,13 @@ for p in players:
     name = short_name(p)
     rec = {'name': name, 'wiki': p['title'], 'born': p.get('birth'), 'nation': nation,
            'leagues': {k: v for k, v in lt.items()}, 'intl': intl,
-           'active': last_season >= THIS_SEASON - 1}
+           'active': last_season >= THIS_SEASON - 1,
+           'clubs': [[k, lg, v[0], v[1], v[2], v[3]] for (k, lg), v in sorted(cl.items(), key=lambda x: x[1][2])],
+           'gk': 'goalkeeper' in (p.get('pos') or '').lower(), 'pos': pos_cat(p.get('pos')), 'last': last_season if last_season else None}
     out_players.append(rec)
+
+for r in out_players:
+    r['clubs'] = [[club_name(c[0])] + c[1:] for c in r['clubs']]
 
 # order: most league apps + caps first (autocomplete shows famous players first)
 out_players.sort(key=lambda r: -(sum(v[0] for v in r['leagues'].values()) + 2 * sum(v[0] for v in r['intl'].values())))
@@ -196,6 +267,96 @@ for n, w in NATIONS.items():
         add(f'wn{re.sub("[^A-Za-z]", "", n)[:6]}{stat[0]}', 'nation', n, cap, stat,
             [(i, r['intl'][n][si]) for i, r in enumerate(out_players) if n in r['intl']], w,
             'senior international caps and goals')
+
+# 4) Pointless Footballers questions: every valid answer with a 0-100 "how many people would say him" score
+def fame(r):
+    apps = sum(v[0] for v in r['leagues'].values()); goals = sum(v[1] for v in r['leagues'].values())
+    caps = sum(v[0] for v in r['intl'].values()); ig = sum(v[1] for v in r['intl'].values())
+    f = apps + 1.5 * caps + 0.6 * goals + 1.5 * ig
+    if r['last'] and r['last'] >= THIS_SEASON - 8:
+        f *= 1.25  # recent players are easier to remember
+    return max(f, 1.0)
+
+
+FAME = [fame(r) for r in out_players]
+pqs = []
+
+
+def pq(qid, kind, q, note, pairs, weight=1.0, minn=15):
+    pairs = [(i, s) for i, s in pairs if s > 0]
+    if len(pairs) < minn:
+        return
+    w = {i: (FAME[i] ** 0.6) * (s ** 0.6) for i, s in pairs}
+    vs = sorted(w.values(), reverse=True)
+    top = vs[1] if len(vs) > 1 else vs[0]  # scale on the second-best-known, so one superstar doesn't squash everyone else
+    a = sorted([[i, min(95, int(round(95 * (v / top) ** 1.5)))] for i, v in w.items()], key=lambda x: (-x[1], x[0]))
+    pqs.append({'id': qid, 't': kind, 'q': q, 'note': note, 'w': round(weight, 2), 'a': a})
+
+
+def slug(x):
+    return re.sub('[^a-z0-9]', '', x.lower())[:14]
+
+
+LGQ = {'Premier League': 'the Premier League', 'LaLiga': 'LaLiga', 'Serie A': 'Serie A', 'Bundesliga': 'the Bundesliga', 'Ligue 1': 'Ligue 1'}
+LGW = {'Premier League': 3.0, 'LaLiga': 1.0, 'Serie A': 1.0, 'Bundesliga': 0.7, 'Ligue 1': 0.6}
+NOTE = {'Premier League': 'Premier League matches since 1992/93'}
+# clubs in a league (apps) and scorers for them
+club_pl = collections.defaultdict(dict)
+for i, r in enumerate(out_players):
+    for name, lg, a, g, y0, y1 in r['clubs']:
+        d = club_pl[(name, lg)]
+        cur = d.get(i, [0, 0]); d[i] = [cur[0] + a, cur[1] + g]
+for (name, lg), d in club_pl.items():
+    if len(d) < 60:
+        continue
+    note = NOTE.get(lg, LGQ[lg].replace('the ', '').strip() + ' matches only')
+    pq('c' + slug(name) + slug(lg)[:3] + 'a', 'club', f'Name a player who played for {name} in {LGQ[lg]}', note,
+       [(i, v[0]) for i, v in d.items()], LGW[lg])
+    pq('c' + slug(name) + slug(lg)[:3] + 'g', 'clubg', f'Name a player who scored a {lg} goal for {name}', note,
+       [(i, v[1]) for i, v in d.items()], LGW[lg] * 0.8)
+# goalkeepers in a league
+for lg in LEAGUES:
+    pq('gk' + slug(lg), 'gk', f'Name a goalkeeper who played in {LGQ[lg]}', NOTE.get(lg, 'league matches only'),
+       [(i, r['leagues'][lg][0]) for i, r in enumerate(out_players) if r['gk'] and lg in r['leagues']], LGW[lg])
+# internationals: played for / scored for a country; a country's players in a league
+for n, wt in NATIONS.items():
+    home = n in HOME
+    pq('i' + slug(n) + 'a', 'intl', f'Name a player who has played for {n}', 'senior internationals only',
+       [(i, r['intl'][n][0]) for i, r in enumerate(out_players) if n in r['intl']], wt * (1.5 if home else 0.6))
+    pq('i' + slug(n) + 'g', 'intlg', f'Name a player who has scored for {n}', 'senior internationals only',
+       [(i, r['intl'][n][1]) for i, r in enumerate(out_players) if n in r['intl']], wt * (1.2 if home else 0.5))
+    for lg in LEAGUES:
+        if lg == 'Premier League' or (n in ('France', 'Spain', 'Germany', 'Italy', 'Brazil', 'Argentina', 'Netherlands', 'Portugal')):
+            pq('n' + slug(n) + slug(lg)[:3], 'nat', f'Name a {n} international who played in {LGQ[lg]}', NOTE.get(lg, 'league matches only'),
+               [(i, r['leagues'][lg][0]) for i, r in enumerate(out_players) if n in r['intl'] and lg in r['leagues']],
+               wt * LGW[lg] * 0.4, 20)
+# pairs: played for both clubs; played in both leagues
+by_player = collections.defaultdict(dict)
+for (name, lg), d in club_pl.items():
+    if len(d) >= 60:
+        for i, v in d.items():
+            by_player[i][name] = by_player[i].get(name, 0) + v[0]
+pair_d = collections.defaultdict(dict)
+for i, cs in by_player.items():
+    ks = sorted(cs)
+    for x in range(len(ks)):
+        for y in range(x + 1, len(ks)):
+            pair_d[(ks[x], ks[y])][i] = min(cs[ks[x]], cs[ks[y]])
+PL_CLUBS = {name for (name, lg), d in club_pl.items() if lg == 'Premier League' and len(d) >= 60}
+for (c1, c2), d in pair_d.items():
+    if len(d) >= 12:
+        both_pl = c1 in PL_CLUBS and c2 in PL_CLUBS
+        pq('p' + slug(c1) + slug(c2), 'pair', f'Name a player who played for both {c1} and {c2}', 'league matches only',
+           list(d.items()), 1.5 if both_pl else 0.5, 12)
+for x in range(len(LEAGUES)):
+    for y in range(x + 1, len(LEAGUES)):
+        a, b = LEAGUES[x], LEAGUES[y]
+        pq('l' + slug(a)[:4] + slug(b)[:4], 'pair', f'Name a player who played in both {LGQ[a]} and {LGQ[b]}', 'league matches only',
+           [(i, min(r['leagues'][a][0], r['leagues'][b][0])) for i, r in enumerate(out_players) if a in r['leagues'] and b in r['leagues']],
+           2.0 if 'Premier League' in (a, b) else 0.6)
+json.dump({'v': 1, 'built': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%MZ'), 'qs': pqs},
+          open(OUT / 'game/pointless.json', 'w'), ensure_ascii=False, separators=(',', ':'))
+print('pointless questions', len(pqs), collections.Counter(q['t'] for q in pqs))
 
 meta = {'version': 2, 'built': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%MZ'), 'seasons': 'All',
         'leagues': LEAGUES,
